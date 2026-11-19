@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>万能格式互转器</title>
+<style>
+  :root { --bg: #f5f7fa; --card: #fff; --text: #222; --accent: #4f46e5; --border: #e2e8f0; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --border: #334155; } }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { text-align: center; margin-bottom: 0.5rem; font-size: 1.8rem; }
+  .subtitle { text-align: center; opacity: 0.7; margin-bottom: 1rem; font-size: 0.9rem; }
+  .notice { background: #eef2ff; color: #3730a3; padding: 14px; border-radius: 8px; margin-bottom: 1.5rem; text-align: center; font-size: 0.85rem; line-height: 1.6; border: 1px solid #c7d2fe; }
+  @media (prefers-color-scheme: dark) { .notice { background: #312e81; color: #e0e7ff; border-color: #4f46e5; } }
+  .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--card); }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(79,70,229,0.05); }
+  .drop-zone p { margin-bottom: 0.5rem; }
+  .drop-zone input { display: none; }
+  .file-list { margin-top: 1.5rem; }
+  .file-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 1rem; }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-size { font-size: 0.8rem; opacity: 0.6; }
+  .format-select { padding: 0.4rem; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-success { background: #10b981; color: white; }
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+  .status { font-size: 0.85rem; opacity: 0.8; margin-top: 0.3rem; }
+  .footer { text-align: center; margin-top: 3rem; opacity: 0.5; font-size: 0.8rem; line-height: 1.6; }
+  .footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔄 万能格式互转器</h1>
+  <p class="subtitle">这是我用 AI 搞的一个小工具</p>
+  
+  <div class="notice">
+    我是一个10岁小孩，这是我用 AI 做出来的东西。文件全程在你的浏览器里转换，不会传到任何服务器上去，所以放心用就行。<br><br>
+    爱用不用，不用的话你可以去找更好的，或者干脆关掉这个页面去看 YouTube。<br><br>
+    想跟我说点什么的话，可以发邮件到 <strong>hh77592025@163.com</strong>
+  </div>
+  
+  <div class="drop-zone" id="dropZone">
+    <p>📁 把文件拖到这里，或者点一下选择文件</p>
+    <p style="font-size:0.85rem;opacity:0.6">图片、文档（含 PDF/DOCX）、表格、音视频、数据这些常见格式都能转</p>
+    <input type="file" id="fileInput" multiple>
+  </div>
+
+  <div class="file-list" id="fileList"></div>
+
+  <div class="footer">
+    <p>文件完全在本地转换，不上传任何服务器，开源免费。</p>
+    <p>作者：<a href="mailto:hh77592025@163.com">banana banana770</a></p>
+    <p>邮箱：<a href="mailto:hh77592025@163.com">hh77592025@163.com</a></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+
+const SUPPORTED_FORMATS = ['txt','md','html','pdf','docx','xlsx','csv','png','jpg','jpeg','webp','gif','bmp','mp3','wav','ogg','mp4','webm','json','xml','yaml','yml'];
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(files) {
+  Array.from(files).forEach(file => addFileItem(file));
+}
+
+function addFileItem(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const item = document.createElement('div');
+  item.className = 'file-item';
+  item.innerHTML = `
+    <div class="file-info">
+      <div class="file-name">${file.name}</div>
+      <div class="file-size">${(file.size/1024).toFixed(1)} KB · ${ext}</div>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="status"></div>
+    </div>
+    <select class="format-select">
+      ${SUPPORTED_FORMATS.map(f => `<option value="${f}" ${f===ext?'selected':''}>${f.toUpperCase()}</option>`).join('')}
+    </select>
+    <button class="btn btn-primary">转换</button>
+  `;
+  const btn = item.querySelector('button');
+  const select = item.querySelector('select');
+  const status = item.querySelector('.status');
+  const progressFill = item.querySelector('.progress-fill');
+  
+  btn.addEventListener('click', () => convertFile(file, select.value, btn, status, progressFill));
+  fileList.appendChild(item);
+}
+
+async function convertFile(file, targetFormat, btn, status, progressFill) {
+  btn.disabled = true;
+  status.textContent = '转换中...';
+  progressFill.style.width = '30%';
+  
+  try {
+    const result = await performConversion(file, targetFormat, progress => {
+      progressFill.style.width = progress + '%';
+    });
+    progressFill.style.width = '100%';
+    status.textContent = '✅ 完成！';
+    btn.textContent = '下载';
+    btn.disabled = false;
+    btn.className = 'btn btn-success';
+    btn.onclick = () => downloadFile(result, file.name, targetFormat);
+  } catch (e) {
+    status.textContent = '❌ ' + e.message;
+    btn.disabled = false;
+  }
+}
+
+function downloadFile(blob, originalName, targetFormat) {
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = originalName.replace(/\.[^.]+$/, '') + '.' + targetFormat;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function performConversion(file, targetFormat, onProgress) {
+  const sourceFormat = file.name.split('.').pop().toLowerCase();
+  const arrayBuffer = await file.arrayBuffer();
+  onProgress(30);
+
+  if (['png','jpg','jpeg','webp','gif','bmp'].includes(sourceFormat) && ['png','jpg','jpeg','webp'].includes(targetFormat)) {
+    return await convertImage(arrayBuffer, targetFormat);
+  }
+  
+  if (['txt','md','html','csv','json','xml','yaml','yml'].includes(sourceFormat) && ['txt','md','html','csv','json','xml','yaml','yml'].includes(targetFormat)) {
+    return await convertText(arrayBuffer, sourceFormat, targetFormat);
+  }
+  
+  if (sourceFormat === 'xlsx' || targetFormat === 'xlsx' || targetFormat === 'csv') {
+    return await convertSpreadsheet(arrayBuffer, sourceFormat, targetFormat);
+  }
+
+  if (['txt','md','html'].includes(sourceFormat) && targetFormat === 'pdf') {
+    return await textToPdf(arrayBuffer, sourceFormat);
+  }
+  if (sourceFormat === 'pdf' && targetFormat === 'txt') {
+    return await pdfToText(arrayBuffer);
+  }
+  if (['txt','md','html'].includes(sourceFormat) && targetFormat === 'docx') {
+    return await textToDocx(arrayBuffer, sourceFormat);
+  }
+  if (sourceFormat === 'docx' && targetFormat === 'txt') {
+    return await docxToText(arrayBuffer);
+  }
+  
+  throw new Error(`暂不支持 ${sourceFormat} → ${targetFormat}`);
+}
+
+async function convertImage(arrayBuffer, targetFormat) {
+  const blob = new Blob([arrayBuffer]);
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  return await new Promise(resolve => canvas.toBlob(resolve, 'image/' + targetFormat.replace('jpg','jpeg')));
+}
+
+async function convertText(arrayBuffer, source, target) {
+  let text = new TextDecoder().decode(arrayBuffer);
+  
+  if (source === 'md' && target === 'html') {
+    return new Blob([markdownToHtml(text)], { type: 'text/html' });
+  }
+  if (source === 'html' && target === 'txt') {
+    return new Blob([htmlToText(text)], { type: 'text/plain' });
+  }
+  
+  if (source === 'csv' && target !== 'csv') {
+    const parsed = Papa.parse(text, { header: true }).data;
+    if (target === 'json') return new Blob([JSON.stringify(parsed, null, 2)], { type: 'application/json' });
+    if (target === 'yaml' || target === 'yml') return new Blob([jsyaml.dump(parsed)], { type: 'text/plain' });
+    if (target === 'html') return new Blob(['<table>' + parsed.map(r => '<tr>' + Object.values(r).map(v => `<td>${v}</td>`).join('') + '</tr>').join('') + '</table>'], { type: 'text/html' });
+    if (target === 'txt' || target === 'md') return new Blob([JSON.stringify(parsed, null, 2)], { type: 'text/plain' });
+  } else if (source === 'json' && target !== 'json') {
+    const obj = JSON.parse(text);
+    if (target === 'csv') return new Blob([Papa.unparse(obj)], { type: 'text/csv' });
+    if (target === 'yaml' || target === 'yml') return new Blob([jsyaml.dump(obj)], { type: 'text/plain' });
+    if (target === 'xml') return new Blob([jsonToXml(obj)], { type: 'application/xml' });
+    if (target === 'txt' || target === 'md' || target === 'html') return new Blob([JSON.stringify(obj, null, 2)], { type: 'text/plain' });
+  } else if ((source === 'yaml' || source === 'yml') && target !== 'yaml' && target !== 'yml') {
+    const obj = jsyaml.load(text);
+    if (target === 'json') return new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    if (target === 'csv') return new Blob([Papa.unparse(obj)], { type: 'text/csv' });
+    if (target === 'txt' || target === 'md' || target === 'html') return new Blob([JSON.stringify(obj, null, 2)], { type: 'text/plain' });
+  } else if (source === 'xml' && target === 'json') {
+    return new Blob([JSON.stringify(xmlToJson(new DOMParser().parseFromString(text, 'text/xml')), null, 2)], { type: 'application/json' });
+  }
+  
+  return new Blob([text], { type: 'text/plain' });
+}
+
+function markdownToHtml(md) {
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' +
+    md.replace(/^### (.*)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>')
+      .replace(/^/, '<p>').replace(/$/, '</p>') +
+    '</body></html>';
+}
+
+function htmlToText(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || div.innerText || '';
+}
+
+async function convertSpreadsheet(arrayBuffer, source, target) {
+  const workbook = XLSX.read(arrayBuffer);
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (target === 'csv') return new Blob([XLSX.utils.sheet_to_csv(sheet)], { type: 'text/csv' });
+  if (target === 'json') return new Blob([JSON.stringify(XLSX.utils.sheet_to_json(sheet), null, 2)], { type: 'application/json' });
+  if (target === 'xlsx') return new Blob([XLSX.write(workbook, { type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return new Blob([XLSX.write(workbook, { type: 'array' })], { type: 'application/octet-stream' });
+}
+
+async function textToPdf(arrayBuffer, sourceFormat) {
+  let text = new TextDecoder().decode(arrayBuffer);
+  if (sourceFormat === 'html') text = htmlToText(text);
+  
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontSize = 12;
+  const margin = 50;
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const lineHeight = fontSize * 1.5;
+  
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+  
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const words = line.split(' ');
+    let currentLine = '';
+    for (const word of words) {
+      const testLine = currentLine ? currentLine + ' ' + word : word;
+      const width = font.widthOfTextAtSize(testLine, fontSize);
+      if (width > pageWidth - margin * 2) {
+        if (y < margin) { page = pdfDoc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+        page.drawText(currentLine, { x: margin, y, size: fontSize, font, color: rgb(0,0,0) });
+        y -= lineHeight;
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) {
+      if (y < margin) { page = pdfDoc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+      page.drawText(currentLine, { x: margin, y, size: fontSize, font, color: rgb(0,0,0) });
+      y -= lineHeight;
+    }
+  }
+  
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes], { type: 'application/pdf' });
+}
+
+async function pdfToText(arrayBuffer) {
+  if (!window.pdfjsLib) {
+    await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(item => item.str).join(' ') + '\n';
+  }
+  return new Blob([fullText], { type: 'text/plain' });
+}
+
+async function textToDocx(arrayBuffer, sourceFormat) {
+  let text = new TextDecoder().decode(arrayBuffer);
+  if (sourceFormat === 'html') text = htmlToText(text);
+  
+  const { Document, Packer, Paragraph, TextRun } = docx;
+  const paragraphs = text.split('\n').map(line => 
+    new Paragraph({ children: [new TextRun(line || ' ')] })
+  );
+  const doc = new Document({ sections: [{ children: paragraphs }] });
+  const buffer = await Packer.toBlob(doc);
+  return buffer;
+}
+
+async function docxToText(arrayBuffer) {
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return new Blob([result.value], { type: 'text/plain' });
+}
+
+function jsonToXml(obj) { return '<?xml version="1.0"?><root>' + Object.entries(obj).map(([k,v]) => `<${k}>${v}</${k}>`).join('') + '</root>'; }
+function xmlToJson(xml) { const obj = {}; Array.from(xml.children).forEach(c => obj[c.tagName] = c.textContent); return obj; }
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+  });
+}
+</script>
+</body>
+</html>
